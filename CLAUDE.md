@@ -12,19 +12,33 @@ dynamically at runtime; nothing here compiles libantimony itself.
 built here). Treat it as **read-only reference** — use it for exported signatures, enum
 ordinals, and ownership semantics. Do not modify it unless asked.
 
+Published as **https://github.com/sys-bio/libAntimony_Delphi_Bindings**, under the **MIT
+licence** (`LICENSE`, © 2022 UW Sauro Lab). That covers the bindings only: libantimony itself,
+and the vendored copy in `antimony-develop/`, carry upstream's own licence.
+
+`README.md` is the user-facing document, and it restates several of the invariants recorded
+below — `freeAll`, the UTF-8 boundary, `moduleName` coming last, the BOM bug, the platform
+`long` width. **When one of those changes, change both.** A convention documented here but
+contradicted in the README is worse than one documented nowhere, because the README is what a
+caller actually reads.
+
+`WinBinary/` holds the upstream Windows distribution (see below). **`MacBinary/` exists but is
+empty** — the macOS `.dylib` is not vendored here, so a macOS build has to source it
+separately.
+
 ## Build
 
 Delphi 13 / RAD Studio (BDS) **37.0**, Win64 Debug by default:
 
 ```
-cmd /c '"C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\rsvars.bat" && msbuild libAntimony_Project.dproj /t:Build /p:Config=Debug /p:Platform=Win64'
+cmd /c '"C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\rsvars.bat" && msbuild libAntimony_Bindings_Project.dproj /t:Build /p:Config=Debug /p:Platform=Win64'
 ```
 
 `ProjectVersion` in the `.dproj` says 20.3 — stale metadata, ignore it; 37.0 is correct.
 
 ## Run
 
-`Win64\Debug\libAntimony_Project.exe` loads three models and exercises one function from each
+`Win64\Debug\libAntimony_Bindings_Project.exe` loads three models and exercises one function from each
 API section (symbols, reactions, stoichiometry matrix, events, interactions, DNA strands,
 submodule replacements, the SBML round trip, and the 3.1/3.2 accessors — user functions,
 stoichiometry-as-written, `substanceOnly`, `hasValue`). There is no unit-test framework; this
@@ -91,8 +105,8 @@ To re-check exports after swapping in a new DLL:
 `tdump.exe -ee Win64\Debug\libantimony.dll` (tdump ships in the Delphi `bin` folder). Note its
 output is CRLF, so strip `\r` before comparing export names against the header.
 
-`binary/` is the upstream Windows distribution the current DLL came from: `binary/lib/` holds
-`libantimony.dll` and `binary/include/` the matching headers, which agree exactly with
+`WinBinary/` is the upstream Windows distribution the current DLL came from: `WinBinary/lib/` holds
+`libantimony.dll` and `WinBinary/include/` the matching headers, which agree exactly with
 `antimony-develop/src/antimony_api.h.in`.
 
 ### Enum ordinals

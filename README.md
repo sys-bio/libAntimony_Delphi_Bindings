@@ -2,6 +2,7 @@
 
 <table style="width:100%">
   <tr>
+    <td><img alt="Licence" src="https://img.shields.io/badge/License-MIT-yellowgreen"></td>
     <td><img alt="Language" src="https://img.shields.io/badge/Delphi-13%20%2F%20RAD%20Studio%2037.0-blue.svg"></td>
     <td><img alt="Platforms" src="https://img.shields.io/badge/Platforms-Win64%20%7C%20macOS%20ARM64-lightgrey"></td>
     <td><img alt="libantimony" src="https://img.shields.io/badge/libantimony-3.2.0-green"></td>
@@ -248,5 +249,13 @@ systems biology — consumes these bindings as a source dependency.
 ## Credits
 
 libantimony is developed by the [sys-bio](https://github.com/sys-bio) group; see
-[sys-bio/antimony](https://github.com/sys-bio/antimony) for the library itself and its
-licence.
+[sys-bio/antimony](https://github.com/sys-bio/antimony) for the library itself.
+
+---
+
+## Licence
+
+MIT — see [LICENSE](LICENSE). © 2022 UW Sauro Lab.
+
+This covers the bindings in this repository. libantimony itself, and the vendored upstream
+copy in `antimony-develop/`, are licensed separately by their own authors.
