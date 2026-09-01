@@ -1,0 +1,64 @@
+// Created by libAntimony v3.2.0
+model moddef1()
+
+  // Compartments and Species:
+  compartment C;
+  substanceOnly species s1 in C;
+
+  // Assignment Rules:
+  t3 := delay(t1, 3);
+
+  // Rate Rules:
+  t1' = time*t1 + 3;
+
+  // Algebraic Rules:
+  _alg0: 0 = t4 - delay(t3, time);
+
+  // Reactions:
+  J0:  -> s1; s1*t3*time/delay(t5, 2e4);
+
+  // Events:
+  _E0: at 1/time after time > 3: t5 = time;
+
+  // Constraints:
+  constraint _con0: time < (t4*t5)
+
+  // Species initializations:
+  s1 = 1;
+
+  // Compartment initializations:
+  C = 1;
+
+  // Variable initializations:
+  t5 = 1;
+  t4 = 1;
+  t1 = 1;
+  t2 = time + 3;
+
+  // Other declarations:
+  var t5, t4, t1, t2, t3;
+  const C;
+end
+
+model *doc0()
+
+  // Sub-modules, and any changes to those submodules:
+  sub1: moddef1(), timeconv = timeconv, extentconv = extentconv;
+  sub1.t1 is t1;
+  sub1.t2 is t2;
+  sub1.t3 is t3;
+  sub1.t4 is t4;
+  sub1.t5 is t5;
+
+  // Algebraic Rules:
+  sub1._alg0: 0 = t4 - delay(t3, timeconv*(time/timeconv));
+
+  // Variable initializations:
+  timeconv = 60;
+  extentconv = 1000;
+
+  // Other declarations:
+  const timeconv, extentconv;
+end
+
+doc0 is "doc0"

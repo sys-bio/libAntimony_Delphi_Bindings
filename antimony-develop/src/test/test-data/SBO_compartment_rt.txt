@@ -1,0 +1,12 @@
+// Created by libAntimony v3.2.0
+// Compartments and Species:
+compartment a;
+
+// Compartment initializations:
+a = ;
+
+// Other declarations:
+const a;
+
+// SBO terms:
+a.sboTerm = 25

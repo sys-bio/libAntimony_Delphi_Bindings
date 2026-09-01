@@ -1,0 +1,1294 @@
+/**
+ * This file is designed to be compiled by the 'bison' program with the
+ * command:
+ *
+ * bison -v antimony.ypp 
+ *
+ * To see counterexamples, use:
+ *
+ * bison -v antimony.ypp -Wcounterexamples
+ *
+ * The '-v' creates a file called 'antimony.output' which can be examined
+ * to piece together the explicit logic of the parser.  The fact that no
+ * '-o' option is used means that the default output file (antimony.tab.cpp)
+ * will be produced.  --update will update the file as bison changes,
+ * and -Wcounterexamples will show shift/reduce or reduce/reduce conflicts
+ * with examples.
+ *
+ * This command produces the file 'antimony.tab.cpp' which is included
+ * explicitly in the antimony distribution.  Automatic creation of this
+ * file is not yet incorporated into the CMake system; it must be
+ * run by hand before change here will make it into the actual antimony
+ * library.
+ *
+ * Bison v2.4.2 was used to create the .cpp file when this file was
+ * first created.  It does not rely on odd features of the bison
+ * parser, so other versions should work fine.
+ *
+ * This file currently compiles with zero reduce/reduce errors and 10
+ * shift/reduce warnings.
+ */
+
+%{
+  //#define YYSTYPE double
+#include <cassert>
+#include <ctype.h>
+#include <fstream>
+#include <iostream>
+#include <math.h>
+#include <set>
+#include <stdio.h>
+#include <string>
+#ifndef NSBML
+#include <sbml/SBMLTypes.h>
+#endif
+#include "registry.h"
+#include "module.h"
+#include "unitdef.h"
+#include "stringx.h"
+
+using namespace libsbml;
+
+  class Formula;
+  class ReactantList;
+  class AntimonyReaction;
+  class Variable;
+
+  using namespace std;
+  int antimony_yylex(void);
+  void antimony_yyerror(char const *);
+  Registry g_registry;
+  int antimony_yylloc_first_line = 1;
+  int antimony_yylloc_last_line = 1;
+  vector<int> antimony_yylloc_last_lines;
+%}
+
+/*Bison declarations */
+%union {
+  char character;
+  const string* word;
+  double num;
+  int integer;
+  bool is_integer;
+  rd_type reactionDivider;
+  Formula* formula;
+  Formula* spacedformula;
+  Formula* commaformula;
+  Module* module;
+  ReactantList* reactantList;
+  Variable* variable;
+  Variable* variablein;
+  Variable* varmaybeis;
+  Variable* maybein;
+  Variable* unitdef;
+  bool maxormin;
+  constraint_type inequality;
+  std::vector<std::string>* stringlist;
+  std::vector<Variable*>* variablelist;
+  std::vector<double>* numlist;
+}
+
+%type <character>       mathThing "mathematical symbol"
+%type <formula>         formula spacedformula commaformula
+%type <module>          module
+%type <reactantList>    reactantList
+%type <reactionDivider> reactionDivider
+%type <inequality>      inequality
+%type <variable>        variable variablein varmaybein varmaybeis maybein unitdef
+%type <maxormin>        maxormin
+%type <stringlist>      stringlist
+%type <variablelist>    variablelist
+%type <numlist>         numlist
+%type <word>            stringConstant
+
+%left '&' '|' /* Boolean functions and, or */
+%left '-' '+'
+%left '*' '/' '%'
+%right '^'    /* exponentiation        */
+
+// dot takes prec over $, e.g. in $mymodel.species, mymodel.species is reduced first and then turned into a boundary species (e.g. in comp)
+%precedence '$'
+%precedence '.'
+
+%token YYEOF 0 "end of file"
+%token EOL "end of line"
+%token  <num> NUM "number"
+%token  <word> AFTER "'after'"
+%token  <word> ANTWORD "element name"
+%token  <word> AT "'at'"
+%token  <word> BECOMESREV "->"
+%token  <word> BECOMESINH "-|"
+%token  <word> BECOMESACT "-o"
+%token  <word> BECOMESIRREV "=>"
+%token  <word> COMPARTMENT "'compartment'"
+%token  <word> CONSTANT "name of a pre-defined constant"
+%token  <word> CONSTRAINTWORD "'constraint'"
+%token  <word> CONSTWORD "'const'"
+%token  <word> DASHES "--"
+%token  <word> DELETEWORD "'delete'"
+%token  <word> DNA "'DNA'"
+%token  <word> ELLIPSES "..."
+%token  <word> END "'end'"
+%token  <word> ERROR "an error"
+%token  <word> EVENT "'event'"
+%token  <word> FORMULA "'formula'"
+%token  <word> FUNCTION "name of an existing function"
+%token  <word> FUNCTIONWORD "'function'"
+%token  <word> GENE "'gene'"
+%token  <word> GENEPRODUCT "'geneProduct'"
+%token  <word> GEQ ">="
+%token  <word> NEQ "!="
+%token  <word> HASWORD "'has'"
+%token  <word> IMPORT "'import'"
+%token  <word> INWORD "'in'"
+%token  <word> IS "'is'"
+%token  <word> LEQ "<="
+%token  <word> MAXIMIZEWORD "'maximize'"
+%token  <word> MINIMIZEWORD "'minimize'"
+%token  <word> MODNAME "name of an existing module"
+%token  <word> MODULE "'model' or 'module'"
+%token  <word> OPERATOR "'operator'"
+%token  <word> REACTION "'reaction'"
+%token  <word> SPECIES "'species'"
+%token  <word> SUBSTONLY "'substanceOnly'"
+%token  <word> TEXTSTRING "text string"
+%token  <word> UNITWORD "'unit'"
+%token  <word> VARWORD "'var'"
+//                      %token  <word> DELETEWORD "'delete'"
+
+%define api.prefix {antimony_yy}
+%debug
+%define parse.error verbose
+%% /* The grammar: */
+
+input:          /* empty */
+        |       input import {}
+        |       input module { /*cout << endl << $2->ToString() << endl << endl;*/ }
+        |       input modulepart {}
+        |       input function {}
+        |       input modulename {}
+        |       input functionname {}
+        |       input modulecvterm {}
+        |       input functioncvterm {}
+        |       input toplevel_sbo {}
+        |       input annotationBlock {}
+        |       input moduleannotation{}
+        |       input error {YYABORT;}
+        |       input ERROR {YYABORT;}
+        ;
+
+import:         IMPORT TEXTSTRING { if (g_registry.OpenFile(*($2))==0) YYABORT;}
+        ;
+
+module:         MODULE ANTWORD {g_registry.NewCurrentModule($2, NULL, false);} '(' variableexportlist ')' modulebody END
+                {
+                  $$ = g_registry.CurrentModule();
+                  if ($$->Finalize()) YYABORT;
+                  g_registry.RevertToPreviousModule();
+                }
+        |       MODULE ANTWORD {g_registry.NewCurrentModule($2, NULL, false);} modulebody END
+                {
+                  $$ = g_registry.CurrentModule();
+                  if ($$->Finalize()) YYABORT;
+                  g_registry.RevertToPreviousModule();
+                }
+        |       MODULE '*' ANTWORD {g_registry.NewCurrentModule($3, NULL, true);} '(' variableexportlist ')' modulebody END
+                {
+                  $$ = g_registry.CurrentModule();
+                  if ($$->Finalize()) YYABORT;
+                  g_registry.RevertToPreviousModule();
+                }
+        |       MODULE '*' ANTWORD {g_registry.NewCurrentModule($3, NULL, true);} modulebody END
+                {
+                  $$ = g_registry.CurrentModule();
+                  if ($$->Finalize()) YYABORT;
+                  g_registry.RevertToPreviousModule();
+                }
+        |       MODULE MODNAME {g_registry.SetError("module '" + *($2) + "' already defined."); YYABORT;}
+        |       MODULE FUNCTION {g_registry.SetError("Cannot define '" + *($2) + "' as a module because it is already a defined function."); YYABORT;}
+        ;
+
+function:       FUNCTIONWORD ANTWORD {g_registry.NewUserFunction($2);} '(' variableexportlist ')' spacedformula END {if (g_registry.SetUserFunction($7)) YYABORT;}
+        |       FUNCTIONWORD MODNAME {g_registry.SetError("Cannot use '" + *($2) +"' as a function name because it is already the name of a module."); YYABORT;}
+        |       FUNCTIONWORD FUNCTION {g_registry.SetError("Cannot define '" + *($2) + "' as a new function because it is already a defined function."); YYABORT;}
+        ;
+
+spacedformula:  formula {$$ = $1;}
+        |       lineend spacedformula {$$ = $2;}
+        |       spacedformula lineend {$$ = $1;}
+        ;
+
+/*
+maybelineend:   // empty
+        |       lineend {}
+        ;
+*/
+
+variableexportlist:
+                /* empty */ {}
+        |       variable {if (g_registry.AddVariableToCurrentExportList($1)) YYABORT; }
+        |       variableexportlist ',' variable { if (g_registry.AddVariableToCurrentExportList($3)) YYABORT; }
+        ;
+
+variable:       ANTWORD {$$ = g_registry.AddVariableToCurrent($1); }
+        |       variable '.' ANTWORD {$$ = $1->GetSubVariable($3);
+                  if ($$ == NULL) {
+                    if (g_registry.GetError().empty()) {
+                      g_registry.SetError("'" + *($3) + "' is not a subvariable of '" + $1->GetNameDelimitedBy(".") + "'.");
+                    }
+                    YYABORT;
+                  }
+                }
+        |       variable '.' DASHES {
+		  string dashes("--");
+		  $$ = $1->GetSubVariable(&dashes);
+                  if ($$ == NULL) {                    g_registry.SetError("There is no empty set that can be set with '.--' for the variable '" + $1->GetNameDelimitedBy(".") + "'.");
+                    YYABORT;
+                  }
+                }
+        |       '$' variable {$$ = $2; if ($$->SetIsConst(true)) YYABORT;}
+        |       variable '.' FORMULA {string formula = "formula";
+                  $$ = $1->GetSubVariable(&formula);
+                  if ($$ == NULL) {
+                    if (g_registry.GetError().empty()) {
+                      g_registry.SetError("'" + *($3) + "' is not a subvariable of '" + $1->GetNameDelimitedBy(".") + "'.");
+                    }
+                    YYABORT;
+                  }
+                }
+        ;
+
+variablein:     variable INWORD variable {if ($1->SetCompartment($3)) YYABORT; $$ = $1;}
+        ;
+
+varmaybein:     variable {$$ = $1;}
+        |       variablein {$$ = $1;}
+        |       FUNCTION {$$ = NULL; g_registry.SetError("'" + *$1 + "' is a reserved word in Antimony (the name of a built-in function) and cannot be used as the name of a variable or other named element."); YYABORT;}
+        |       CONSTANT {$$ = NULL; g_registry.SetError("'" + *$1 + "' is a reserved word in Antimony (the name of a built-in constant) and cannot be used as the name of a variable or other named element."); YYABORT;}
+        ;
+
+varmaybeis:     varmaybein {$$ = $1;}
+        |       varmaybein '=' formula {$$ = $1; if ($1->SetFormula($3)) YYABORT; }
+        |       varmaybein ':' '=' formula {$$ = $1; if ($1->SetAssignmentRule($4)) YYABORT; }
+        |       varmaybein '\'' '=' formula {$$ = $1; if ($1->SetRateRule($4)) YYABORT; }
+        |       varmaybein HASWORD unitdef {$$ = $1; if ($1->SetUnit($3)) YYABORT; }
+        ;
+
+maybein:        /* empty */ {$$ = NULL;}
+        |       INWORD variable {$$ = $2;}
+        ;
+
+modulebody:     modulepart {}
+        |       moduleannotation {}
+        |       modulebody modulepart {}
+        |       modulebody moduleannotation{}
+        ;
+
+moduleannotation: MODULE ANTWORD stringlist lineend
+                {
+                  string modname = g_registry.CurrentModuleName();
+                  bool cverr = g_registry.ProcessGlobalCVTerm(&modname,$2,*$3);
+                  delete $3;
+                  if (cverr) YYABORT;
+                }
+        |       MODULE ANTWORD '.' ANTWORD stringlist lineend
+                {
+                  string modname = g_registry.CurrentModuleName();
+                  bool cverr = g_registry.ProcessGlobalCreatorTerm(&modname, $2, $4, *$5);
+                  delete $5;
+                  if (cverr) YYABORT;
+                }
+        |       MODULE ANTWORD '.' ANTWORD NUM lineend
+                {
+                  string modname = g_registry.CurrentModuleName();
+                  if (g_registry.ProcessGlobalCreatorTerm(&modname, $2, $4, $5)) YYABORT;
+                }
+        |       MODULE '.' ANTWORD '=' NUM
+                  { Module* module = g_registry.CurrentModule();
+                    if (module && $3 && CaselessStrCmp(true, *($3), "sboTerm")) {
+                      module->SetSBOTerm(lround($5));
+                    }
+                    else {
+                      g_registry.SetError("Invalid syntax 'model." + *($3) + "'. The only thing that can be set on the model to a number is 'sboTerm'.");
+                      YYABORT;
+                    }
+                  }
+        |       MODULE '.' ANTWORD '=' stringConstant
+                  { Module* module = g_registry.CurrentModule();
+                    if (module && $3 && CaselessStrCmp(true, *($3), "layout")) {
+                      if (module->SetLayout($5)) YYABORT;
+                    }
+                    else {
+                      g_registry.SetError("Invalid syntax 'model." + *($3) + "'. The only thing that can be set on the model to a string is 'layout'.");
+                      YYABORT;
+                    }
+                  }
+        |       MODULE '.' ANTWORD '.' ANTWORD '=' NUM
+                  { Module* module = g_registry.CurrentModule();
+                    if (module && $3 && CaselessStrCmp(true, *($3), "autolayout")) {
+                      if (module->SetAutoLayout($5, $7)) YYABORT;
+                    }
+                    else if (module && $3 && CaselessStrCmp(true, *($3), "layout")) {
+                      if (module->SetLayout($5, $7)) YYABORT;
+                    }
+                    else {
+                      g_registry.SetError("Invalid syntax 'model." + *($3) + "'.*:  The core word here must be 'layout' or 'autolayout'.");
+                      YYABORT;
+                    }
+                    module->SetLayout("on");
+                  }
+        |       MODULE '.' ANTWORD '.' ANTWORD '=' stringConstant
+                  { Module* module = g_registry.CurrentModule();
+                    if (module && $3 && CaselessStrCmp(true, *($3), "autolayout")) {
+                      if (module->SetAutoLayout($5, $7)) YYABORT;
+                    }
+                    else if (module && $3 && CaselessStrCmp(true, *($3), "layout")) {
+                      if (module->SetLayout($5, $7)) YYABORT;
+                    }
+                    else {
+                      g_registry.SetError("Invalid syntax 'model." + *($3) + "'.*:  The core word here must be 'layout' or 'autolayout'.");
+                      YYABORT;
+                    }
+                    module->SetLayout("on");
+                  }
+        |       MODULE '.' ANTWORD '.' ANTWORD '=' '{' variablelist '}'
+                  { Module* module = g_registry.CurrentModule();
+                    if (module && $3 && CaselessStrCmp(true, *($3), "autolayout")) {
+                      if (module->SetAutoLayout($5, $8)) YYABORT;
+                    }
+                    else if (module && $3 && CaselessStrCmp(true, *($3), "layout")) {
+                      if (module->SetLayout($5, $8)) YYABORT;
+                    }
+                    else {
+                      g_registry.SetError("Invalid syntax 'model." + *($3) + "'.*:  The core word here must be 'layout' or 'autolayout'.");
+                      YYABORT;
+                    }
+                    module->SetLayout("on");
+                  }
+        |       MODULE '.' ANTWORD '.' ANTWORD '=' '{' numlist '}'
+                  { Module* module = g_registry.CurrentModule();
+                    if (module && $3 && CaselessStrCmp(true, *($3), "autolayout")) {
+                      if (module->SetAutoLayout($5, $8)) YYABORT;
+                    }
+                    else if (module && $3 && CaselessStrCmp(true, *($3), "layout")) {
+                      if (module->SetLayout($5, $8)) YYABORT;
+                    }
+                    else {
+                      g_registry.SetError("Invalid syntax 'model." + *($3) + "'.*:  The core word here must be 'layout' or 'autolayout'.");
+                      YYABORT;
+                    }
+                    module->SetLayout("on");
+                  }
+        ;
+
+stringConstant: CONSTANT {$$ = $1;}
+        |       TEXTSTRING {$$ = $1;}
+        |       ANTWORD {$$ = $1;}
+        |       FUNCTION {$$ = $1;}
+
+variablelist:   variable { $$ = new std::vector<Variable*>(); $$->push_back($1);} // need to free $1?
+        |       variablelist ',' variable { $$ = $1; $$->push_back($3); } // need to free $3?
+        |       variablelist ',' '\n' variable { $$ = $1; $$->push_back($4); } // eat newlines
+        ;
+
+numlist:        NUM { $$ = new std::vector<double>(); $$->push_back($1); }
+        |       numlist ',' NUM { $$ = $1; $$->push_back($3); } 
+        |       numlist ',' '\n' NUM { $$ = $1; $$->push_back($4); } // eat newlines
+        ;
+
+modulepart:     reaction lineend {}
+        |       assignment lineend {}
+        |       submodule lineend {}
+        |       varinitialize lineend {}
+        |       dnadef lineend {}
+        |       event lineend {}
+        |       unitinit lineend {}
+        |       deletion lineend {}
+        |       cvterm lineend {}
+        |       variablein {}
+        |       constraint lineend {}
+        |       objective lineend {}
+        |       algrule lineend {}
+        |       lineend {}
+        ;
+
+reaction:       varmaybein ':' reactantList reactionDivider reactantList ';' formula maybein
+                {
+                  Variable* var = g_registry.AddNewReactionToCurrent($4, $7, $1, 0);
+                  if (var == NULL) YYABORT;
+                  if ($8 != NULL) {
+                    if ($1->SetCompartment($8)) YYABORT;
+                  }
+                }
+        |       reactantList reactionDivider reactantList ';' formula maybein
+                {
+                  Variable* var = g_registry.AddNewReactionToCurrent($2, $5, 0);
+                  if (var == NULL) YYABORT;
+                  if ($6 != NULL) {
+                    if (var->SetCompartment($6)) YYABORT;
+                  }
+                }
+        |       reactantList reactionDivider ';' formula maybein
+                {
+                  Variable* var = g_registry.AddNewReactionToCurrent($2, $4, 1);
+                  if (var == NULL) YYABORT;
+                  if ($5 != NULL) {
+                    if (var->SetCompartment($5)) YYABORT;
+                  }
+                }
+        |       varmaybein ':' reactantList reactionDivider ';' formula maybein
+                {
+                  Variable* var = g_registry.AddNewReactionToCurrent($4, $6, $1, 1);
+                  if (var == NULL) YYABORT;
+                  if ($7 != NULL) {
+                    if ($1->SetCompartment($7)) YYABORT;
+                  }
+                }
+        |       reactionDivider reactantList ';' formula maybein
+                {
+                  Variable* var = g_registry.AddNewReactionToCurrent($1, $4, 2);
+                  if (var == NULL) YYABORT;
+                  if ($5 != NULL) {
+                    if (var->SetCompartment($5)) YYABORT;
+                  }
+                }
+        |       varmaybein ':' reactionDivider reactantList ';' formula maybein
+                {
+                  Variable* var = g_registry.AddNewReactionToCurrent($3, $6, $1, 2);
+                  if (var == NULL) YYABORT;
+                  if ($7 != NULL) {
+                    if ($1->SetCompartment($7)) YYABORT;
+                  }
+                }
+        ;
+
+reactantList:   variable {$$ = g_registry.NewBlankReactantList(); if($$->AddReactant($1)) YYABORT; }
+        |       NUM variable {$$ = g_registry.NewBlankReactantList(); if($$->AddReactant($2, $1)) YYABORT; }
+        |       variable variable {$$ = g_registry.NewBlankReactantList(); if($$->AddReactant($2, $1)) YYABORT; }
+        |       reactantList '+' variable {$$ = $1; if($1->AddReactant($3)) YYABORT; }
+        |       reactantList '+' NUM variable {$$ = $1; if($1->AddReactant($4, $3)) YYABORT; }
+        |       reactantList '+' variable variable {$$ = $1; if($1->AddReactant($4, $3)) YYABORT; }
+        ;
+
+reactionDivider:
+                BECOMESREV {$$ = rdBecomes;}
+        |       BECOMESINH {$$ = rdInhibits;}
+        |       '-' '(' {$$ = rdInfluences;}
+        |       BECOMESACT {$$ = rdActivates;}
+        |       BECOMESIRREV {$$ = rdBecomesIrreversibly;}
+        ;
+
+formula:        /* empty */ {$$ = g_registry.NewBlankFormula(); }
+        |       formula ELLIPSES {$$ = $1; $1->AddEllipses();}
+        |       formula variable {$$ = $1; if($1->AddVariable($2)) YYABORT; }
+        |       formula NUM  {$$ = $1; $1->AddNum($2); }
+        |       formula CONSTANT  {$$ = $1; $1->AddText($2); }
+        |       formula FUNCTION {$$ = $1; $1->AddText($2); }
+        |       formula '(' commaformula ')' {$$ = $1; $3->AddParentheses(); $$->AddFormula($3); }
+        |       formula '{' commaformula '}' {$$ = $1; $3->AddCurlyBrackets(); $$->AddFormula($3); }
+        |       formula mathThing {$$ = $1; $1->AddMathThing($2); }
+        |       formula inequality {$$ = $1; $1->AddInequality($2); }
+        |       formula '=' '=' {$$ = $1; $1->AddMathThing('='); $1->AddMathThing('='); }
+        |       formula '&' '&' {$$ = $1; $1->AddMathThing('&'); $1->AddMathThing('&'); }
+        |       formula '|' '|' {$$ = $1; $1->AddMathThing('|'); $1->AddMathThing('|'); }
+        |       formula TEXTSTRING {$$ = $1; $1->AddText($2, true); }
+        ;
+
+commaformula:   formula {$$ = $1;}
+        |       commaformula ',' formula {$$ = $1; $$->AddMathThing(','); $$->AddFormula($3); }
+        ;
+
+mathThing:      '+' {$$ = '+';}
+        |       '-' {$$ = '-';}
+        |       '*' {$$ = '*';}
+        |       '/' {$$ = '/';}
+        |       '^' {$$ = '^';}
+        |       '!' {$$ = '!';}
+        |       '%' {$$ = '%';}
+        ;
+
+inequality:     '<' {$$ = constLT;}
+        |       LEQ {$$ = constLEQ;}
+        |       '>' {$$ = constGT;}
+        |       GEQ {$$ = constGEQ;}
+        |       NEQ {$$ = constNEQ;}
+        ;
+
+lineend:        ';' {}
+        |       '\n' {}
+        |       EOL {}
+        ;
+
+assignment:     varmaybein ':' maxormin formula {if (g_registry.CurrentModule()->AddObjective($1, $4, $3)) YYABORT;}
+        |       varmaybein '=' formula {if ($1->SetFormula($3)) YYABORT; }
+        |       varmaybein IS variable {if ($1->Synchronize($3, NULL)) YYABORT;}
+        |       varmaybein IS variable '/' variable {if ($1->Synchronize($3, $5)) YYABORT;}
+        |       varmaybein '*' variable IS variable {if ($1->Synchronize($5, $3)) YYABORT;}
+        |       varmaybein IS TEXTSTRING {if ($1->SetDisplayName(*($3))) YYABORT;}
+        |       varmaybein ':' '=' formula {if ($1->SetAssignmentRule($4)) YYABORT;}
+        |       varmaybein '\'' '=' formula {if ($1->SetRateRule($4)) YYABORT;}
+        |       varmaybein HASWORD unitdef {if ($1->SetUnit($3)) YYABORT; }
+        ;
+
+algrule:        NUM '=' formula {if (g_registry.AddNewAlgebraicRuleToCurrent($1, $3)) YYABORT; }
+        |       varmaybein ':' NUM '=' formula {if ($1->SetAlgebraicRule($3, $5) ) YYABORT;}
+        ;
+
+submodule:      varmaybein ':' MODNAME '(' {if ($1->SetModule($3)) YYABORT;} variableimportlist ')' submodifications maybein {if ($9 != NULL) {if ($1->SetCompartment($9)) YYABORT;}}
+        |       MODNAME '(' {if(g_registry.CurrentModule()->SetModule($1)) YYABORT;} variableimportlist ')' submodifications maybein {if ($7 != NULL) {if (g_registry.GetCurrentSubmodel()->SetCompartment($7)) YYABORT;}}
+        ;
+
+variableimportlist:
+                /* empty */ {}
+        |       variable {if (g_registry.AddVariableToCurrentImportList($1)) YYABORT; }
+        |       variableimportlist ',' variable { if (g_registry.AddVariableToCurrentImportList($3)) YYABORT; }
+        |       NUM {if (g_registry.AddNumberToCurrentImportList($1)) YYABORT; }
+        |       variableimportlist ',' NUM { if (g_registry.AddNumberToCurrentImportList($3)) YYABORT; }
+        ;
+
+submodifications:
+                /* empty */ {}
+        |       submodifications ',' ANTWORD '=' variable {if (CaselessStrCmp(false, *$3, "extentconv")) {g_registry.GetCurrentSubmodel()->SetExtentConversionFactor($5);}
+                else if (CaselessStrCmp(false, *$3, "timeconv")) {if (g_registry.GetCurrentSubmodel()->SetTimeConversionFactor($5)) YYABORT;}
+                else { g_registry.SetError("Illegal term '" + *$3 + "' in submodel declaration.  You may use the terms 'extentconv' and 'timeconv' to set the extent and time conversion factors for this submodel, respectively."); YYABORT;}}
+        ;
+        |       submodifications ',' ANTWORD '=' NUM {if (CaselessStrCmp(false, *$3, "extentconv")) {g_registry.GetCurrentSubmodel()->SetExtentConversionFactor($5);}
+                else if (CaselessStrCmp(false, *$3, "timeconv")) {if (g_registry.GetCurrentSubmodel()->SetTimeConversionFactor($5)) YYABORT;}
+                else { g_registry.SetError("Illegal term '" + *$3 + "' in submodel declaration.  You may use the terms 'extentconv' and 'timeconv' to set the extent and time conversion factors for this submodel, respectively."); YYABORT;}}
+        ;
+varinitialize:  specinit { }
+        |       formulainit { }
+        |       reactioninit { }
+        |       dnainit { }
+        |       geneinit { }
+        |       geneProductInit { }
+        |       operatorinit { }
+        |       compartmentinit { }
+        |       varconstinit { }
+        ;
+
+specinit:       SPECIES varmaybeis {g_registry.SetConstness(constDEFAULT); g_registry.SetSubstOnly(false); $2->SetRegSpecVals(); if ($2->SetType(varSpeciesUndef)) YYABORT; }
+        |       VARWORD SPECIES varmaybeis {g_registry.SetConstness(constVAR); g_registry.SetSubstOnly(false); $3->SetRegSpecVals(); if ($3->SetType(varSpeciesUndef)) YYABORT; }
+        |       CONSTWORD SPECIES varmaybeis {g_registry.SetConstness(constCONST); g_registry.SetSubstOnly(false); $3->SetRegSpecVals(); if ($3->SetType(varSpeciesUndef)) YYABORT; }
+        |       SUBSTONLY SPECIES varmaybeis {g_registry.SetConstness(constDEFAULT); g_registry.SetSubstOnly(true); $3->SetRegSpecVals(); if ($3->SetType(varSpeciesUndef)) YYABORT; }
+        |       SUBSTONLY varmaybeis {g_registry.SetConstness(constDEFAULT); g_registry.SetSubstOnly(true); $2->SetRegSpecVals(); if ($2->SetType(varSpeciesUndef)) YYABORT; }
+        |       VARWORD SUBSTONLY SPECIES varmaybeis {g_registry.SetConstness(constVAR); g_registry.SetSubstOnly(true); $4->SetRegSpecVals(); if ($4->SetType(varSpeciesUndef)) YYABORT; }
+        |       CONSTWORD SUBSTONLY SPECIES varmaybeis {g_registry.SetConstness(constCONST); g_registry.SetSubstOnly(true); $4->SetRegSpecVals(); if ($4->SetType(varSpeciesUndef)) YYABORT; }
+        |       specinit ',' varmaybeis {$3->SetRegSpecVals(); if ($3->SetType(varSpeciesUndef)) YYABORT; }
+        |       SPECIES '.' ANTWORD '=' formula {if (g_registry.CurrentModule()->AddSpeciesLayoutInfo($3, $5)) YYABORT;}
+        ;
+
+geneProductInit:       GENEPRODUCT varmaybeis {if ($2->SetType(varGeneProduct)) YYABORT; }
+        |              geneProductInit ',' varmaybeis {if ($3->SetType(varGeneProduct)) YYABORT;}
+
+formulainit:    FORMULA varmaybeis {g_registry.SetConstness(constDEFAULT); $2->SetRegConst(); if ($2->SetType(varFormulaUndef)) YYABORT; }
+        |       VARWORD FORMULA varmaybeis {g_registry.SetConstness(constVAR); $3->SetRegConst(); if ($3->SetType(varFormulaUndef)) YYABORT; }
+        |       CONSTWORD FORMULA varmaybeis {g_registry.SetConstness(constCONST); $3->SetRegConst(); if ($3->SetType(varFormulaUndef)) YYABORT; }
+        |       formulainit ',' varmaybeis {$3->SetRegConst(); if ($3->SetType(varFormulaUndef)) YYABORT; }
+        ;
+
+reactioninit:   REACTION varmaybeis {g_registry.SetConstness(constDEFAULT); $2->SetRegConst(); if ($2->SetType(varReactionUndef)) YYABORT; }
+        |       VARWORD REACTION varmaybeis {g_registry.SetConstness(constVAR); $3->SetRegConst(); if ($3->SetType(varReactionUndef)) YYABORT; }
+        |       CONSTWORD REACTION {g_registry.SetError("Reactions may not be set 'const'."); YYABORT; }
+        |       reactioninit ',' varmaybeis {$3->SetRegConst(); if ($3->SetType(varReactionUndef)) YYABORT; }
+        |       REACTION '.' ANTWORD '=' formula {if (g_registry.CurrentModule()->AddReactionLayoutInfo($3, $5)) YYABORT;}
+        ;
+
+dnainit:        DNA varmaybeis {g_registry.SetConstness(constDEFAULT); $2->SetRegConst(); if ($2->SetType(varDNA)) YYABORT; }
+        |       VARWORD DNA varmaybeis {g_registry.SetConstness(constVAR); $3->SetRegConst(); if ($3->SetType(varDNA)) YYABORT; }
+        |       CONSTWORD DNA varmaybeis {g_registry.SetConstness(constCONST); $3->SetRegConst(); if ($3->SetType(varDNA)) YYABORT; }
+        |       dnainit ',' varmaybeis {$3->SetRegConst(); if ($3->SetType(varDNA)) YYABORT; }
+        ;
+
+geneinit:       GENE varmaybeis {g_registry.SetConstness(constDEFAULT); $2->SetRegConst(); if ($2->SetType(varReactionGene)) YYABORT; }
+        |       VARWORD GENE varmaybeis {g_registry.SetConstness(constVAR); $3->SetRegConst(); if ($3->SetType(varReactionGene)) YYABORT; }
+        |       CONSTWORD GENE varmaybeis {g_registry.SetError("Genes may not be set 'const'."); YYABORT; }
+        |       geneinit ',' varmaybeis {$3->SetRegConst(); if ($3->SetType(varReactionGene)) YYABORT; }
+        ;
+
+operatorinit:   OPERATOR varmaybeis {g_registry.SetConstness(constDEFAULT); $2->SetRegConst(); if ($2->SetType(varFormulaOperator)) YYABORT; }
+        |       VARWORD OPERATOR varmaybeis {g_registry.SetConstness(constVAR); $3->SetRegConst(); if ($3->SetType(varFormulaOperator)) YYABORT; }
+        |       CONSTWORD OPERATOR varmaybeis {g_registry.SetConstness(constCONST); $3->SetRegConst(); if ($3->SetType(varFormulaOperator)) YYABORT; }
+        |       operatorinit ',' varmaybeis {$3->SetRegConst(); if ($3->SetType(varFormulaOperator)) YYABORT; }
+        ;
+
+compartmentinit:
+                COMPARTMENT varmaybeis {g_registry.SetConstness(constDEFAULT); $2->SetRegConst(); if ($2->SetType(varCompartment)) YYABORT; }
+        |       VARWORD COMPARTMENT varmaybeis {g_registry.SetConstness(constVAR); $3->SetRegConst(); if ($3->SetType(varCompartment)) YYABORT; }
+        |       CONSTWORD COMPARTMENT varmaybeis {g_registry.SetConstness(constCONST); $3->SetRegConst(); if ($3->SetType(varCompartment)) YYABORT; }
+        |       compartmentinit ',' varmaybeis {$3->SetRegConst(); if ($3->SetType(varCompartment)) YYABORT; }
+        |       COMPARTMENT '.' ANTWORD '=' formula {if (g_registry.CurrentModule()->AddCompartmentLayoutInfo($3, $5)) YYABORT;}
+        ;
+
+varconstinit:   VARWORD varmaybeis {g_registry.SetConstness(constVAR); $2->SetRegConst();}
+        |       CONSTWORD varmaybeis {g_registry.SetConstness(constCONST); $2->SetRegConst();}
+        |       varconstinit ',' varmaybeis {$3->SetRegConst();}
+        ;
+
+unitinit:       UNITWORD variable '=' formula {if ($2->SetType(varUnitDefinition)) YYABORT;
+                                               if ($4->MakeAllVariablesUnits()) YYABORT;
+                                               if ($2->GetUnitDef()->SetFromFormula($4)) YYABORT;}
+        |       UNITWORD variable {if ($2->SetType(varUnitDefinition)) YYABORT;}
+        ;
+
+dnadef:         dnastrand {if (g_registry.SaveWorkingStrand()) YYABORT;}
+        |       varmaybein ':' dnastrand {if (g_registry.SetStrandAs($1)) YYABORT;}
+        ;
+
+dnastrand:      DASHES variable {if (g_registry.SetNewUpstreamOpen($2)) YYABORT;}
+        |       DASHES dnamiddle {g_registry.SetOpenUpstream(); }
+        |       dnamiddle variable {if (g_registry.SetDownstreamEnd($2)) YYABORT;}
+        |       DASHES dnamiddle variable {g_registry.SetOpenUpstream(); if(g_registry.SetDownstreamEnd($3)) YYABORT;}
+        |       dnamiddle { }
+        ;
+
+dnamiddle:      variable DASHES {if (g_registry.SetNewDownstreamOpen($1)) YYABORT;}
+        |       dnamiddle variable DASHES {if (g_registry.SetDownstreamOpen($2)) YYABORT;}
+        ;
+
+event:          AT formula {if (g_registry.SetNewCurrentEvent($2)) YYABORT;} eventmodifications colonret assignmentlist {}
+        |       AT formula AFTER formula {if (g_registry.SetNewCurrentEvent($2, $4)) YYABORT;} eventmodifications colonret assignmentlist {}
+        |       varmaybein ':' AT formula {if (g_registry.SetNewCurrentEvent($4, $1)) YYABORT;}  eventmodifications colonret assignmentlist {}
+        |       varmaybein ':' AT formula AFTER formula {if (g_registry.SetNewCurrentEvent($4, $6, $1)) YYABORT;} eventmodifications colonret assignmentlist {}
+        ;
+
+colonret:       ':' {}
+        |       colonret '\n' {}
+        ;
+
+eventmodifications:  /* empty */ {}
+        |       eventmodifications ',' ANTWORD '=' formula {if (CaselessStrCmp(false, *$3, "priority")) {g_registry.GetCurrentEvent()->SetPriority(*$5);}
+                else if (CaselessStrCmp(false, *$3, "t0")) {if (g_registry.GetCurrentEvent()->SetInitialValue(*$5)) YYABORT;}
+                else if (CaselessStrCmp(false, *$3, "fromTrigger")) {if (g_registry.GetCurrentEvent()->SetUseValuesFromTriggerTime(*$5)) YYABORT;}
+                else if (CaselessStrCmp(false, *$3, "persistent")) {if (g_registry.GetCurrentEvent()->SetPersistent(*$5)) YYABORT;}
+                else { g_registry.SetError("Illegal term '" + *$3 + "' in event defintion.  You may use the terms 'priority', 't0', 'fromTrigger', and 'persistent' here to set those properties of an event."); YYABORT;}}
+        ;
+
+assignmentlist: variable '=' formula {if (g_registry.GetCurrentEvent()->AddResult($1, $3)) YYABORT;}
+        |       variable '=' formula ':' assignmentlist {if (g_registry.GetCurrentEvent()->AddResult($1, $3)) YYABORT;}
+        |       variable '=' formula ':' '\n' assignmentlist {if (g_registry.GetCurrentEvent()->AddResult($1, $3)) YYABORT;}
+        |       variable '=' formula ',' assignmentlist {if (g_registry.GetCurrentEvent()->AddResult($1, $3)) YYABORT;}
+        |       variable '=' formula ',' '\n' assignmentlist {if (g_registry.GetCurrentEvent()->AddResult($1, $3)) YYABORT;}
+        ;
+
+deletion:       DELETEWORD variable {if (g_registry.CurrentModule()->AddDeletion($2)) YYABORT;}
+        |       deletion ',' variable {if (g_registry.CurrentModule()->AddDeletion($3)) YYABORT;}
+        ;
+
+unitdef:        formula {
+                    if ($1->MakeAllVariablesUnits()) YYABORT;
+                    if ($1->IsSingleVariable()) {
+                      $$ = g_registry.CurrentModule()->GetVariable(($1->GetVariableStrings())[0]);
+                      if ($$==NULL) YYABORT;
+                    }
+                    else {
+                      UnitDef ud("", g_registry.CurrentModule()->GetModuleName());
+                      if ($1->MakeAllVariablesUnits()) YYABORT;
+                      if (ud.SetFromFormula($1)) YYABORT;
+                      $$ = g_registry.CurrentModule()->AddOrFindUnitDef(ud);
+                    }
+                }
+        ;
+
+constraint:     NUM inequality formula {if (g_registry.CurrentModule()->AddConstraint($1, $3, $2)) YYABORT;}
+        |       '-' NUM inequality formula {if (g_registry.CurrentModule()->AddConstraint(-$2, $4, $3)) YYABORT;}
+        |       CONSTANT inequality formula {if (g_registry.CurrentModule()->AddConstraint($1, $3, $2)) YYABORT;}
+        |       ANTWORD inequality formula {if (g_registry.CurrentModule()->AddConstraint($1, $3, $2)) YYABORT;}
+        |       CONSTRAINTWORD ':' formula {if (g_registry.CurrentModule()->AddConstraint($3)) YYABORT;}
+        |       CONSTRAINTWORD variable ':' formula {if (g_registry.CurrentModule()->AddConstraint($2, $4)) YYABORT;}
+        ;
+
+objective:      maxormin formula              {if (g_registry.CurrentModule()->AddObjective($2, $1)) YYABORT;}
+        ;
+
+maxormin:       MAXIMIZEWORD {$$ = true;}
+        |       MINIMIZEWORD {$$ = false;}
+        ;
+
+stringlist:     TEXTSTRING { $$ = new std::vector<std::string>(); $$->push_back(*($1)); } // need to free $1?
+        |       stringlist ',' TEXTSTRING { $$ = $1; $$->push_back(*$3); } // need to free $3?
+        |       stringlist ',' '\n' TEXTSTRING { $$ = $1; $$->push_back(*$4); } // eat newlines
+
+annotationBlock:    ANTWORD MODNAME {if (g_registry.SetCurrentModuleIf($2, $1)) YYABORT;} annotations END {g_registry.RevertToPreviousModule();}
+        ;
+
+annotations:    /* empty */ {}
+        |       ANTWORD ':' stringlist {string modname = g_registry.CurrentModuleName(); g_registry.ProcessGlobalCVTerm(&modname, $1, *$3); delete $3;}
+//        |       ANTWORD ':' NUM {g_registry.CurrentModule()->SetAnnotation($1, $3);}
+        ;
+
+// JKM cvterm accepts multiple URIs in the stringlist
+cvterm:         variable ANTWORD stringlist {bool cverr = g_registry.CurrentModule()->ProcessCVTerm($1,$2,*$3); delete $3; if (cverr) YYABORT;}
+        |       variable ANTWORD '.' ANTWORD stringlist {bool cverr = g_registry.ProcessCreatorTerm($1, $2, $4, *$5); delete $5; if (cverr) YYABORT;}
+        |       variable ANTWORD '.' ANTWORD NUM {if (g_registry.ProcessCreatorTerm($1, $2, $4, $5)) YYABORT;}
+
+// JKM setting an SBO term for a module (outside the body of the module)
+toplevel_sbo:     MODNAME '.' ANTWORD '=' NUM
+                  { Module* module = g_registry.GetModule(*$1);
+                    if (module && $3 && CaselessStrCmp(true, *($3), "sboTerm")) {
+                      module->SetSBOTerm(lround($5));
+                    }
+                    else {
+                      g_registry.SetError("Invalid syntax '" + *($1) + "." + *($3) + "'. The only thing that can be set on '" + *($1) + "' this way is 'sboTerm'.");
+                      YYABORT;
+                    }
+                  }
+// JKM setting an SBO term for a function (outside the body of the function)
+        |         FUNCTION '.' ANTWORD '=' NUM
+                  { Module* function = g_registry.GetModule(*$1);
+                    if (function && $3 &&  CaselessStrCmp(true, *($3), "sboTerm")) {
+                      function->SetSBOTerm(lround($5));
+                    }
+                    else {
+                      g_registry.SetError("Invalid syntax '" + *($1) + "." + *($3) + "'. The only thing that can set '" + *($1) + "' to a number is 'sboTerm'.");
+                      YYABORT;
+                    }
+                  }
+        |         MODNAME '.' ANTWORD '=' stringConstant
+                  { Module* function = g_registry.GetModule(*$1);
+                    if (function && $3 &&  CaselessStrCmp(true, *($3), "autolayout")) {
+                      if (function->SetLayout($5)) YYABORT;
+                    }
+                    else {
+                      g_registry.SetError("Invalid syntax '" + *($1) + "." + *($3) + "'. The only thing that can set on '" + *($1) + "' to a string is 'layout'.");
+                      YYABORT;
+                    }
+                  }
+        |       MODNAME '.' ANTWORD '.' ANTWORD '=' NUM
+                  { Module* module = g_registry.CurrentModule();
+                    if (module && $3 && CaselessStrCmp(true, *($3), "autolayout")) {
+                      if (module->SetAutoLayout($5, $7)) YYABORT;
+                    }
+                    else if (module && $3 && CaselessStrCmp(true, *($3), "layout")) {
+                      if (module->SetLayout($5, $7)) YYABORT;
+                    }
+                    else {
+                      g_registry.SetError("Invalid syntax 'model." + *($3) + "'.*:  The core word here must be 'layout' or 'autolayout'.");
+                      YYABORT;
+                    }
+                    module->SetLayout("on");
+                  }
+        |       MODNAME '.' ANTWORD '.' ANTWORD '=' stringConstant
+                  { Module* module = g_registry.CurrentModule();
+                    if (module && $3 && CaselessStrCmp(true, *($3), "autolayout")) {
+                      if (module->SetAutoLayout($5, $7)) YYABORT;
+                    }
+                    else if (module && $3 && CaselessStrCmp(true, *($3), "layout")) {
+                      if (module->SetLayout($5, $7)) YYABORT;
+                    }
+                    else {
+                      g_registry.SetError("Invalid syntax 'model." + *($3) + "'.*:  The core word here must be 'layout' or 'autolayout'.");
+                      YYABORT;
+                    }
+                    module->SetLayout("on");
+                  }
+        |       MODNAME '.' ANTWORD '.' ANTWORD '=' '{' variablelist '}'
+                  { Module* module = g_registry.CurrentModule();
+                    if (module && $3 && CaselessStrCmp(true, *($3), "autolayout")) {
+                      if (module->SetAutoLayout($5, $8)) YYABORT;
+                    }
+                    else if (module && $3 && CaselessStrCmp(true, *($3), "layout")) {
+                      if (module->SetLayout($5, $8)) YYABORT;
+                    }
+                    else {
+                      g_registry.SetError("Invalid syntax 'model." + *($3) + "'.*:  The core word here must be 'layout' or 'autolayout'.");
+                      YYABORT;
+                    }
+                    module->SetLayout("on");
+                  }
+        |       MODNAME '.' ANTWORD '.' ANTWORD '=' '{' numlist '}'
+                  { Module* module = g_registry.CurrentModule();
+                    if (module && $3 && CaselessStrCmp(true, *($3), "autolayout")) {
+                      if (module->SetAutoLayout($5, $8)) YYABORT;
+                    }
+                    else if (module && $3 && CaselessStrCmp(true, *($3), "layout")) {
+                      if (module->SetLayout($5, $8)) YYABORT;
+                    }
+                    else {
+                      g_registry.SetError("Invalid syntax 'model." + *($3) + "'.*:  The core word here must be 'layout' or 'autolayout'.");
+                      YYABORT;
+                    }
+                    module->SetLayout("on");
+                  }
+
+// JKM for naming modules and functions (display names)
+modulename:     MODNAME IS TEXTSTRING lineend
+                { g_registry.GetModule(*$1)->SetDisplayName(*$3); }
+functionname:   FUNCTION IS TEXTSTRING lineend
+                { g_registry.GetModule(*$1)->SetDisplayName(*$3); }
+
+// JKM for parsing cv terms for modules and functions
+modulecvterm:   MODNAME ANTWORD stringlist lineend {bool cverr = g_registry.ProcessGlobalCVTerm($1,$2,*$3); delete $3; if (cverr) YYABORT;}
+        |       MODNAME ANTWORD '.' ANTWORD stringlist lineend {bool cverr = g_registry.ProcessGlobalCreatorTerm($1, $2, $4, *$5); delete $5; if (cverr) YYABORT;}
+        |       MODNAME ANTWORD '.' ANTWORD NUM lineend {if (g_registry.ProcessGlobalCreatorTerm($1, $2, $4, $5)) YYABORT;}
+functioncvterm: FUNCTION ANTWORD stringlist lineend {bool cverr = g_registry.ProcessGlobalCVTerm($1,$2,*$3); delete $3; if (cverr) YYABORT;}
+
+%%
+
+
+void antimony_yyerror(char const *s)
+{
+  if (g_registry.GetError()=="") {
+    g_registry.SetError(s);
+  }
+}
+
+int antimony_yylex(void)
+{
+  char cc = 0;
+  if (g_registry.GetEOFFlag()) {
+    g_registry.ClearEOFFlag();
+    if (g_registry.SwitchToPreviousFile()) {
+      if (g_registry.CurrentModule()->Finalize()) {
+        return ERROR;
+      }
+      return 0;
+    }
+    else {
+      antimony_yylloc_first_line = antimony_yylloc_last_lines.back();
+      antimony_yylloc_last_line = antimony_yylloc_last_lines.back();
+      antimony_yylloc_last_lines.pop_back();
+      return antimony_yylex();
+    }
+  }
+  else {
+    g_registry.input->get(cc);
+    //If we're done with the file, add a newline
+    if (g_registry.input->eof()) {
+      g_registry.SetEOFFlag();
+      return EOL;
+    }
+  }
+  if (!g_registry.input->good()) {
+    // Something else went wrong!
+    g_registry.SetError("Failure reading input stream in line " + DoubleToString(antimony_yylloc_last_line) + ".  Try adding a space anywhere before that line and re-running.");
+    // In case knowing the following helps during debugging:
+    bool eof = g_registry.input->eof();
+    bool fail = g_registry.input->fail();
+    bool bad = g_registry.input->bad();
+    return ERROR;
+  }
+
+  antimony_yylloc_first_line = antimony_yylloc_last_line;
+
+  // Skip white space.
+  while ((cc == ' ' ||
+         cc == '\t') &&
+         !g_registry.input->eof()) {
+    g_registry.input->get(cc);
+  }
+  if (g_registry.input->eof()) return antimony_yylex();
+  // Skip carriage returns after '\':
+  if (cc == '\\') {
+    g_registry.input->get(cc);
+    if (cc == '\r' || cc == '\n' || cc == ' ') {
+      while ((cc == '\r' || cc == '\n' || cc == ' ') && !g_registry.input->eof()) {
+        g_registry.input->get(cc);
+      }
+      ++antimony_yylloc_last_line;
+      g_registry.input->unget();
+      return antimony_yylex();
+    }
+    else {
+      g_registry.input->unget();
+      cc = '\\';
+    }
+ }
+
+  // Parse words
+  if (cc > 0 && (isalpha(cc) || cc == '_') && cc != '`') {
+    string word;
+    while (cc > 0 && (isalpha(cc) || isdigit(cc) || cc == '_') && !g_registry.input->eof()) {
+      word += cc;
+      g_registry.input->get(cc);
+    }
+    if (!g_registry.input->eof()) {
+      g_registry.input->unget();
+    }
+    if (CaselessStrCmp(false, word, "module")) {
+      return MODULE;
+    }
+    if (CaselessStrCmp(false, word, "model")) {
+      return MODULE;
+    }
+    if (CaselessStrCmp(false, word, "end")) {
+      return END;
+    }
+    if (CaselessStrCmp(false, word, "species")) {
+      return SPECIES;
+    }
+    if (CaselessStrCmp(false, word, "formula")) {
+      return FORMULA;
+    }
+    if (CaselessStrCmp(false, word, "reaction")) {
+      return REACTION;
+    }
+    if (CaselessStrCmp(false, word, "DNA")) {
+      return DNA;
+    }
+    if (CaselessStrCmp(false, word, "gene")) {
+      return GENE;
+    }
+    if (CaselessStrCmp(false, word, "geneProduct")) {
+      return GENEPRODUCT;
+    }
+    if (CaselessStrCmp(false, word, "operator")) {
+      return OPERATOR;
+    }
+    if (CaselessStrCmp(false, word, "compartment")) {
+      return COMPARTMENT;
+    }
+    if (CaselessStrCmp(false, word, "has")) {
+      return HASWORD;
+    }
+    if (CaselessStrCmp(false, word, "in")) {
+      return INWORD;
+    }
+    if (CaselessStrCmp(false, word, "is")) {
+      return IS;
+    }
+    if (CaselessStrCmp(false, word, "var")) {
+      return VARWORD;
+    }
+    if (CaselessStrCmp(false, word, "const")) {
+      return CONSTWORD;
+    }
+    if (CaselessStrCmp(false, word, "substanceOnly")) {
+      return SUBSTONLY;
+    }
+    if (CaselessStrCmp(false, word, "ext")) {
+      return CONSTWORD;
+    }
+    if (CaselessStrCmp(false, word, "import")) {
+      return IMPORT;
+    }
+    if (CaselessStrCmp(false, word, "event")) {
+      return EVENT;
+    }
+    if (CaselessStrCmp(false, word, "at")) {
+      return AT;
+    }
+    if (CaselessStrCmp(false, word, "after")) {
+      return AFTER;
+    }
+    if (CaselessStrCmp(false, word, "function")) {
+      return FUNCTIONWORD;
+    }
+    if (CaselessStrCmp(false, word, "unit")) {
+      return UNITWORD;
+    }
+    if (CaselessStrCmp(false, word, "delete")) {
+      return DELETEWORD;
+    }
+    if (CaselessStrCmp(false, word, "constraint")) {
+      return CONSTRAINTWORD;
+    }
+    if (CaselessStrCmp(false, word, "maximize")) {
+      return MAXIMIZEWORD;
+    }
+    if (CaselessStrCmp(false, word, "minimize")) {
+      return MINIMIZEWORD;
+    }
+    if (CaselessStrCmp(true, word, "sbo") && (g_registry.input->peek() == ':')) {
+      // try to parse an SBO term
+      g_registry.input->get();
+      cc = g_registry.input->peek();
+      if (cc > 0 && (isdigit(cc))) {
+        *g_registry.input >> antimony_yylval.integer;
+        if (g_registry.input->fail()) {
+          g_registry.SetError("Unable to parse SBO term.");
+          return ERROR;
+        }
+        antimony_yylval.num = antimony_yylval.integer;
+        antimony_yylval.is_integer = true;
+      }
+      return NUM;
+    }
+
+    if (g_registry.IsFunction(word) != NULL) {
+      antimony_yylval.word = g_registry.IsFunction(word);
+      return FUNCTION;
+    }
+    if (g_registry.IsConstant(word) != NULL) {
+      antimony_yylval.word = g_registry.IsConstant(word);
+      return CONSTANT;
+    }
+    //Otherwise, it's a user-defined variable:
+    antimony_yylval.word = g_registry.AddWord(word);
+    //cout << "\tRead word '" << word << "'." << endl;
+    if (g_registry.IsModuleName(word)) {
+      return MODNAME;
+    }
+    return ANTWORD;
+  }
+
+  // Parse numbers
+  if (cc > 0 && (isdigit(cc) || (cc=='.' && isdigit(g_registry.input->peek())))) {
+    double number;
+    g_registry.input->unget();
+    streampos numbegin = g_registry.input->tellg();
+    *g_registry.input >> number;
+    streampos numend = g_registry.input->tellg();
+    if (g_registry.input->fail()) {
+      //The gcc 4.4.3 parser fails if there's an 'e' after a number with no exponent.
+      g_registry.input->clear();
+      g_registry.input->seekg(numbegin);
+      int numint;
+      *g_registry.input >> numint;
+      antimony_yylval.num = numint;
+      antimony_yylval.integer = numint;
+      antimony_yylval.is_integer = true;
+      if (g_registry.input->peek() == '.') {
+        antimony_yylval.integer = 0;
+        antimony_yylval.is_integer = false;
+        g_registry.input->get();
+        *g_registry.input >> numint;
+        double fraction = numint;
+        while (fraction >= 1.0) {
+          fraction = fraction/10;
+        }
+        antimony_yylval.num += fraction;
+      }
+      return NUM;
+    }
+    assert(g_registry.input->good());
+    antimony_yylval.num = number;
+    //However, pre-4.4.3 parsers would read the 'e' anyway, and we don't want it to, so unget the 'e'.
+    g_registry.input->unget();
+    if (!g_registry.input->good()) {
+      //Sometimes you can't do this?  For some reason?  If this happens we'll assume there was no 'e'.
+      g_registry.input->clear();
+    }
+    else {
+      g_registry.input->get(cc);
+      if (cc == 'e' || cc == 'E') {
+        g_registry.input->unget();
+      }
+    }
+    return NUM;
+  }
+
+  //Parse '->' and dashes
+  if (cc == '-') {
+    g_registry.input->get(cc);
+    if (cc == '-') {
+      while ((cc == '-') && !g_registry.input->eof()) {
+        g_registry.input->get(cc);
+      }
+      g_registry.input->unget();
+      return DASHES;
+    } else if (cc == '>') {
+      return BECOMESREV;
+    } else if (cc == '|') {
+      return BECOMESINH;
+    } else if (cc == 'o') {
+      char nextchar;
+      g_registry.input->get(nextchar);
+      g_registry.input->unget();
+      if (nextchar == ' ' || nextchar == ';') {
+        return BECOMESACT;
+      }
+    }
+    g_registry.input->unget();
+    cc = '-';
+    return cc;
+  }
+
+  //Parse '=>'
+  if (cc == '=') {
+    g_registry.input->get(cc);
+    if (cc == '>') {
+      return BECOMESIRREV;
+    }
+    g_registry.input->unget();
+    cc = '=';
+    return cc;
+  }
+
+  //Parse LEQ ('<=') and BECOMESREV ('<==>')
+  if (cc == '<') {
+    g_registry.input->get(cc);
+    if (cc == '=') {
+      g_registry.input->get(cc);
+      if (cc == '=') {
+        g_registry.input->get(cc);
+        if (cc == '>') {
+          return BECOMESREV;
+        }
+        else {
+          g_registry.input->unget();
+        }
+      }
+      g_registry.input->unget();
+      return LEQ;
+    }
+    g_registry.input->unget();
+    cc = '<';
+  }
+
+  //Parse GEQ >=
+  if (cc == '>') {
+    g_registry.input->get(cc);
+    if (cc == '=') {
+      return GEQ;
+    }
+    g_registry.input->unget();
+    cc = '>';
+  }
+
+  //Parse NEQ !=
+  if (cc == '!') {
+    g_registry.input->get(cc);
+    if (cc == '=') {
+      return NEQ;
+    }
+    g_registry.input->unget();
+    cc = '!';
+  }
+
+  //Skip comments:
+  if (cc == '/') {
+    g_registry.input->get(cc);
+    if (cc == '/') {
+      while (cc != '\n' && cc != '\r' && !g_registry.input->eof()) {
+        g_registry.input->get(cc);
+      }
+      if (!g_registry.input->eof()) {
+        g_registry.input->unget();
+      }
+      return antimony_yylex();
+    }
+    else if (cc == '*') {
+      bool nextstar = false;
+      g_registry.input->get(cc);
+      while ((!g_registry.input->eof()) && !(nextstar && cc == '/')) {
+        if (cc == '*') {
+          nextstar = true;
+        }
+        else {
+          nextstar = false;
+        }
+        g_registry.input->get(cc);
+      }
+      return antimony_yylex();
+    }
+    else {
+      g_registry.input->unget();
+      cc = '/';
+    }
+  }
+  else if (cc == '#') {
+      while (cc != '\n' && cc != '\r' && !g_registry.input->eof()) {
+        g_registry.input->get(cc);
+      }
+      if (!g_registry.input->eof()) {
+        g_registry.input->unget();
+      }
+      return antimony_yylex();
+  }
+
+  //Parse ellipses
+  if (cc == '.') {
+    char c1, c2;
+    g_registry.input->get(c1);
+    g_registry.input->get(c2);
+    if (c1=='.' && c2=='.') {
+      return ELLIPSES;
+    }
+    g_registry.input->unget();
+    g_registry.input->unget();
+  }
+
+  //Parse text strings
+  if (cc == '`') {
+    string textstring;
+    // Check if we're a three-tick block.
+    if (g_registry.input->peek() == '`') {
+      g_registry.input->get(cc);
+      if (g_registry.input->peek() == '`') {
+        g_registry.input->get(cc);
+        g_registry.input->get(cc);
+        while (cc != '`' && !g_registry.input->eof()) {
+          textstring += cc;
+          g_registry.input->get(cc);
+          if (cc=='`') {
+            g_registry.input->get(cc);
+            if (cc=='`') {
+              g_registry.input->get(cc);
+              if (cc=='`') {
+                antimony_yylval.word = g_registry.AddWord(textstring);
+                return TEXTSTRING;
+              }
+              else {
+                textstring += '`';
+                textstring += '`';
+              }
+            }
+            else {
+              textstring += '`';
+            }
+          }
+        }
+      }
+      else {
+        // Just two ticks (i.e. empty string)
+        antimony_yylval.word = g_registry.AddWord("");
+        return TEXTSTRING;
+      }
+    }
+    else return '`';
+  }
+  if (cc == '"') {
+    string textstring;
+    long ccount = 0;
+    g_registry.input->get(cc);
+    while (cc != '"' && cc != '\r' && cc != '\n' && !g_registry.input->eof()) {
+      if (cc == '\\') {
+        g_registry.input->get(cc);
+        textstring += cc;
+        ccount++;
+      }
+      else {
+        textstring += cc;
+      }
+      ccount++;
+      g_registry.input->get(cc);
+    }
+    if (cc == '\r' || cc == '\n' || g_registry.input->eof()) {
+      for (; ccount > 0; ccount--) {
+        g_registry.input->unget();
+      }
+      cc = '"';
+    }
+    else {
+      antimony_yylval.word = g_registry.AddWord(textstring);
+      return TEXTSTRING;
+    }
+  }
+
+  //Parse '@'
+//  if (cc == '@') {
+//    return AT;
+//  }
+
+  //This converts PC and Mac end-of-line characters to \n:
+  if (cc == '\r') {
+    g_registry.input->get(cc);
+    if (cc != '\n') {
+      g_registry.input->unget();
+    }
+    cc = '\n';
+  }
+  if (cc == '\n') {
+    ++antimony_yylloc_last_line;
+  }
+  if ((cc<32 && cc != 9 && cc != 10 && cc != 13) || cc > 126) {
+    stringstream err;
+    err << "Unparseable content in line " << antimony_yylloc_last_line;
+    err << ": unknown character '" << cc << "' (an integer value of ";
+    err << (int) cc << ".)";
+    g_registry.SetError(err.str());
+    return ERROR;
+  }
+  return cc;
+}

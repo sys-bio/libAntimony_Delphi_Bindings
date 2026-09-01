@@ -1,0 +1,262 @@
+#ifndef ENUMS_H
+#define ENUMS_H
+
+ /**
+  * @file    enums.h
+  * @brief   Various enums used both in the API and internally in libAntimony.
+  * @author  Lucian Smith
+  *
+  */
+/**
+ * rd_types are the different types of reactions and interactions.
+ * - rdBecomes: A reversible reaction: -> or <=>
+ * - rdActivates: An activation interaction: -o
+ * - rdInhibits: An inhibition interaction: -|
+ * - rdInfluences: A generic interaction: -(
+ * - rdBecomesIrreversibly: An irreversible reaction: '=>'
+ */
+enum rd_type {rdBecomes = 0, rdActivates, rdInhibits, rdInfluences, rdBecomesIrreversibly};
+
+/**
+ * var_types define internally what a symbol is; they are not used in the API anywhere.  But for the curious, they are:
+ * - varSpeciesUndef: Generic species
+ * - varFormulaUndef: Generic formula (reaction rate, constant, etc.)
+ * - varDNA: A DNA element
+ * - varFormulaOperator: A DNA element that only has a formula associated with it (an operator)
+ * - varReactionGene: A DNA element that has a reaction associated with it (a gene)
+ * - varReactionUndef: A generic reaction
+ * - varInteraction: A generic interaction
+ * - varUndefined: A symbol that was used somewhere (like in a formula) that has no other definition.
+ * - varModule: A submodule
+ * - varEvent: An event
+ * - varCompartment: A compartment
+ * - varStrand: A DNA strand (an ordered list of DNA elements)
+ * - varUnitDefinition: A unit definition.
+ * - varDeleted: A deleted submodel element
+ * - varConstraint: A constraint (either an FBC constraint or a 'normal' constraint)
+ * - varGeneProduct: A gene product (as defined in the FBC package)
+ * - varGeneProductAssociation: A gene product association (as defined in the FBC package)
+ * - varSpeciesCharge: The charge of a species (defined in the FBC package)
+ * - varSpeciesChemicalFormula: The chemical formula of a species (defined in the FBC package)
+ * - varKineticLawWrapper: The kineticLaw sub-object of a reaction, addressed as 'reaction.kineticLaw' (used to set its sboTerm, annotations, etc. separately from the reaction itself)
+ */
+
+enum var_type {varSpeciesUndef = 0,
+               varFormulaUndef,
+               varDNA,
+               varFormulaOperator,
+               varReactionGene,
+               varReactionUndef,
+               varInteraction,
+               varUndefined,
+               varModule,
+               varEvent,
+               varCompartment,
+               varStrand,
+               varUnitDefinition,
+               varDeleted,
+               varConstraint,
+               varSboTermWrapper,
+               varUncertWrapper,
+               varLayoutWrapper,
+               varStoichiometry,
+               varAlgebraicRule,
+               varLayoutColorEtc,
+               varGeneProduct,
+               varGeneProductAssociation,
+               varSpeciesCharge,
+               varSpeciesChemicalFormula,
+               varKineticLawWrapper,
+               };
+/**
+ * return_types are used in the API when requesting information about different symbols.  Each return_type refers to a different group of symbols, and are overlapping--i.e. a single symbol can be included in 'allGenes' and 'allReactions'. 
+  * - allSymbols:        Every symbol of every type in Antimony.
+  * - allSpecies:        All species, both const (border) and variable.
+  * - allFormulas:       All formulas (values defined by an equation), both const and variable.
+  * - allDNA:            All symbols defined to be DNA (operators and genes, but not strands).
+  * - allOperators:      All symbols defined to be operators (formulas embeddable in a DNA strand).
+  * - allGenes:          All symbols defined to be genes (reactions embeddable in a DNA strand).
+  * - allReactions:      All reactions (species being converted or created).
+  * - allInteractions:   All interactions (species involved in reaction rates).
+  * - allEvents:         All events.
+  * - allCompartments:   All compartments, both const and variable.
+  * - allUnknown:        All symbols whose type has never been defined or used.
+  * - varSpecies:        Variable species.
+  * - varFormulas:       Formulas (equations) that can change (including as a result of events).
+  * - varOperators:      Operators with variable values.
+  * - varCompartments:   Compartments with variable sizes.
+  * - constSpecies:      Constant species (aka 'border species').
+  * - constFormulas:     Formulas with constant values.
+  * - constOperators:    Operators with constant values.
+  * - constCompartments: Compartments with constant sizes.
+  * - subModules:        Submodules used within the current module.
+  * - expandedStrands:   DNA strands containing nothing but operators and genes--any sub-strands have been expanded to their component DNA objects, and those sub-strands are not included in any lists.
+  * - modularStrands:    All defined DNA strands, with some being subparts of the others.
+  * - allUnits:          All unit definitions.
+  * - allDeleted:        All submodel elements that have been deleted from the containing model.
+  * - allConstraints:    All constraints.
+  * - allStoichiometries: All reaction stoichiometries (aka 'species references') in the model.
+  * - allAlgebraicRules: All algebraic rules in the model.
+  * - allGeneProducts:   All gene products (as defined in the FBC package).
+  * - allGeneProductAssociations: All gene product associations (as defined in the FBC package).
+  * - allSpeciesFbcInfo: A species' charge and/or chemical formula (as defined in the FBC package).
+  */
+enum return_type {allSymbols = 0,
+                  allSpecies,
+                  allFormulas,
+                  allDNA,
+                  allOperators,
+                  allGenes,
+                  allReactions,
+                  allInteractions,
+                  allEvents,
+                  allCompartments,
+                  allUnknown,
+                  varSpecies,
+                  varFormulas,
+                  varOperators,
+                  varCompartments,
+                  constSpecies,
+                  constFormulas,
+                  constOperators,
+                  constCompartments,
+                  subModules,
+                  expandedStrands,
+                  modularStrands,
+                  allUnits,
+                  allDeleted,
+                  allConstraints,
+                  allStoichiometries,
+                  allAlgebraicRules,
+                  allGeneProducts,
+                  allGeneProductAssociations,
+                  allSpeciesFbcInfo,
+};
+
+/**
+ * const_type values are not used in the API, but are used internally in libAntimony.  Every symbol starts off being constDEFAULT, which means that the model never stated explicitly whether the symbol was to be constant or variable, so the program will use a heuristic to determine which is the case.  Once set, the heuristic is ignored, and the type (constVAR for variable symbols, constCONST for constant ones) is permanent.  Not all symbols can actually be variable or constant (for example, submodules and reactions), so attempts to set this value for those symbols will fail.
+ */
+enum const_type {constDEFAULT = 0, constVAR, constCONST};
+
+/**
+ * rule_type values are not used in the API, but are used internally in libAntimony.  Every symbol starts off with a default type based on its type (most things are formINITIAL; reactions are formKINETIC, and events are formTRIGGER), and those symbols that aren't reactions, events, or modules may be formASSIGNMENT (for those symbols that have assignment rules) or formRATE (for those symbols that have rate rules).  formASSIGNMENT symbols have only one formula, but formRATE have two: one for their initial condition, and one for how it changes with time.
+ */
+enum formula_type {formulaINITIAL = 0, formulaASSIGNMENT, formulaRATE, formulaKINETIC, formulaTRIGGER, formulaALGEBRAIC};
+
+/**
+ * deletion_type values are not used in the API, but are used internally in libAntimony.  When a variable is deleted in Antimony, the elements it appears in may also need to be deleted.  This allows 'partial' deletion of SBML elements, so (for example) if a species is deleted, it disappears from all reactions it used to appear in.
+ */
+enum deletion_type {delFull = 0,
+                    delEventPriority,
+                    delEventDelay,
+                    delEventAssignment,
+                    delRateRule,
+                    delInitialAssignment,
+                    delAssignmentRule,
+                    delReactant,
+                    delProduct,
+                    delKineticLaw,
+                    delModifier,
+                    delInteraction};
+
+/**
+ * constraint_type values are used to determine what kind (and whether) of a simple constraint is being defined.
+ */
+enum constraint_type {
+    constNONE = 0
+  , constGT
+  , constLT
+  , constEQ
+  , constGEQ
+  , constLEQ
+  , constNEQ
+};
+
+/**
+ * uncert_types are the different types of uncertainty measurements.
+ * - unCoefficientOfVariation:
+ * - unKurtosis:
+ * - unMean:
+ * - unMedian:
+ * - unMode:
+ * - unSampleSize:
+ * - unSkewness:
+ * - unStandardDeviation:
+ * - unStandardError:
+ * - unVariance:
+ * - unConfidenceInterval:
+ * - unCredibleInterval:
+ * - unInterquartileRange:
+ * - unRange:
+ * - unDistribution:
+ * - unExternalParameter:
+ */
+enum uncert_type { 
+  unCoefficientOfVariation = 0, 
+  unKurtosis, 
+  unMean, 
+  unMedian, 
+  unMode, 
+  unSampleSize, 
+  unSkewness, 
+  unStandardDeviation, 
+  unStandardError, 
+  unVariance, 
+  unConfidenceInterval, 
+  unCredibleInterval, 
+  unInterquartileRange, 
+  unRange, 
+  unDistribution, 
+  unExternalParameter,
+  unUnknown
+};
+
+/**
+ * layout_types are the different types of layout information.
+ * - unCoefficientOfVariation:
+ * - unKurtosis:
+ * - unMean:
+ * - unMedian:
+ * - unMode:
+ * - unSampleSize:
+ * - unSkewness:
+ * - unStandardDeviation:
+ * - unStandardError:
+ * - unVariance:
+ * - unConfidenceInterval:
+ * - unCredibleInterval:
+ * - unInterquartileRange:
+ * - unRange:
+ * - unDistribution:
+ * - unExternalParameter:
+ */
+enum layout_type {
+    lt_position = 0,
+    lt_x,
+    lt_y,
+    lt_size,
+    lt_height,
+    lt_width,
+    lt_color,
+    lt_font,
+    lt_fontsize,
+    lt_fontcolor,
+    lt_fontstyle,
+    lt_fontweight,
+    lt_linewidth,
+    lt_linecolor,
+    lt_shape,
+    lt_reactionArc,
+    lt_sourceSink,
+    lt_unknown
+};
+
+enum arc_type {
+    at_rxn = 0,
+    at_spec,
+    at_b1,
+    at_b2,
+    at_none
+};
+
+#endif // ENUMS_H

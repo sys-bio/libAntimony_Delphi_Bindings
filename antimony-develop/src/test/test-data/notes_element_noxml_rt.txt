@@ -1,0 +1,9 @@
+// Created by libAntimony v3.2.0
+// Variable initializations:
+a = ;
+
+// Other declarations:
+const a;
+
+// Notes:
+a notes "Just text, no XML"

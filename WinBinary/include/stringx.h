@@ -1,0 +1,50 @@
+#ifndef STRINGX_H
+#define STRINGX_H
+
+#include <string>
+#include <vector>
+#include <map>
+#include "enums.h"
+
+class Formula;
+class Module;
+class Variable;
+
+std::string SizeTToString(size_t num);
+std::string DoubleToString(double num);
+std::string ToStringFromVecDelimitedBy(std::vector<std::string> name, std::string cc);
+std::wstring ToWString(std::string in);
+std::string ToThinString(std::wstring in);
+std::string Trim(std::string in);
+std::string AndsAndOrs(std::string& in);
+std::string StripMsgXML(std::string& in);
+// removes the \r in \r\n
+std::string NormalizeLineEndings(std::string in);
+
+bool IsReal(const std::string& src);
+double GetReal(const std::string& src);
+void setFormulaWithString(std::string formulastring, Formula* formula, Module* module);
+bool FixName(std::string& name);
+bool FixName(std::vector<std::string>& names);
+void FixName(std::vector<std::vector<std::string> >& allnames);
+void FixName(std::map<std::vector<std::string>, Variable*>& varmap);
+void FixUnitName(std::string& name);
+
+bool CaselessStrCmp(bool caseless, const std::string& lhs, const std::string& rhs);
+
+//From https://stackoverflow.com/questions/216823/how-to-trim-an-stdstring
+// trim from start (in place)
+void ltrim(std::string& s);
+// trim from end (in place)
+void rtrim(std::string& s);
+// trim from both ends (in place)
+void trim(std::string& s);
+
+//trim and also remove internal double spaces.
+void trimAndRemoveDoubleSpaces(std::string& s);
+
+std::string quoteText(std::string in);
+
+
+
+#endif //STRINGX_h
